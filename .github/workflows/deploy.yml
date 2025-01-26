@@ -1,0 +1,44 @@
+name: Deploy Laravel in Docker (stn)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up PHP 8.2
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          extensions: mbstring, bcmath, curl, xml
+
+      - name: Install Dependencies
+        run: |
+          docker-compose run --rm composer install --no-dev --prefer-dist --optimize-autoloader
+          docker-compose run --rm php-fpm php artisan config:cache
+          docker-compose run --rm php-fpm php artisan route:cache
+          docker-compose run --rm php-fpm php artisan view:cache
+
+      - name: Deploy to Server in Docker
+        uses: appleboy/ssh-action@v0.1.6
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH }}
+            git pull origin main
+            docker-compose pull  # Fetches the latest images but does not rebuild the app unless necessary
+            docker-compose up -d  # Starts the containers (if they are down) or restarts them if updated
+            docker exec stn_php-fpm_1 bash -c "php artisan migrate --force"
+            docker exec stn_php-fpm_1 bash -c "php artisan config:cache"
+            docker exec stn_php-fpm_1 bash -c "php artisan route:cache"
+            docker exec stn_php-fpm_1 bash -c "php artisan view:cache"
+            sudo systemctl restart apache2
