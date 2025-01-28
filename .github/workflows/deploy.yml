@@ -31,10 +31,11 @@ jobs:
             sudo chmod -R 775 /var/www/stn/storage /var/www/stn/bootstrap/cache
             # Run Docker Compose commands to start containers and handle cache
             sudo docker-compose -f /var/www/stn/docker-compose.yml up -d
-            sudo docker-compose -f /var/www/stn/docker-compose.yml exec php-fpm composer install --no-dev --prefer-dist --optimize-autoloader
-            sudo docker-compose -f /var/www/stn/docker-compose.yml exec php-fpm php artisan migrate --force
-            sudo docker-compose -f /var/www/stn/docker-compose.yml exec php-fpm php artisan config:cache
-            sudo docker-compose -f /var/www/stn/docker-compose.yml exec php-fpm php artisan route:cache
-            sudo docker-compose -f /var/www/stn/docker-compose.yml exec php-fpm php artisan view:cache
+            # Execute composer install, migrations, and cache commands
+            sudo docker-compose -f /var/www/stn/docker-compose.yml exec app composer install --no-dev --prefer-dist --optimize-autoloader
+            sudo docker-compose -f /var/www/stn/docker-compose.yml exec app php artisan migrate --force
+            sudo docker-compose -f /var/www/stn/docker-compose.yml exec app php artisan config:cache
+            sudo docker-compose -f /var/www/stn/docker-compose.yml exec app php artisan route:cache
+            sudo docker-compose -f /var/www/stn/docker-compose.yml exec app php artisan view:cache
             # Restart nginx (if necessary)
             sudo systemctl restart nginx
