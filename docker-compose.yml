@@ -11,8 +11,6 @@ services:
       - .:/var/www/html
     networks:
       - stn_network
-    environment:
-      - REDIS_HOST=redis
 
   db:
     image: mysql:8.0
@@ -26,12 +24,19 @@ services:
     networks:
       - stn_network
 
+  php-fpm:
+    image: php:8.2-fpm
+    container_name: stn_php_fpm
+    restart: always
+    volumes:
+      - .:/var/www/html
+    networks:
+      - stn_network
+
   redis:
     image: redis:alpine
     container_name: stn_redis
     restart: always
-    ports:
-      - "6379:6379"
     networks:
       - stn_network
 
