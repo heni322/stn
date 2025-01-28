@@ -23,18 +23,26 @@ jobs:
         run: |
           composer install --no-dev --prefer-dist --optimize-autoloader
 
+      - name: Set up SSH
+        run: |
+          # Create the .ssh directory if it doesn't exist
+          mkdir -p ~/.ssh
+          # Add the private SSH key from GitHub secrets into the SSH file
+          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
+          # Set correct permissions for the private key file
+          chmod 600 ~/.ssh/id_rsa
+          # Disable strict host key checking (to avoid prompts)
+          echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
+
       - name: Deploy to Server
-        uses: appleboy/ssh-action@v0.1.6
-        with:
-          host: ${{ secrets.SERVER_IP }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          script: |
+        run: |
+          # SSH into the server and deploy the Laravel app
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
             # Navigate to the project directory
             cd /var/www/stn
-            # Copy .env.local to .env
+            # Copy .env.local to .env (if you need to do that)
             sudo cp /var/www/.env.local /var/www/stn/.env
-            # Pull latest code from GitHub
+            # Pull the latest code from GitHub
             git pull origin main
             # Set permissions for Laravel storage and cache
             sudo chown -R www-data:www-data /var/www/stn
@@ -48,3 +56,4 @@ jobs:
             sudo docker-compose -f /var/www/stn/docker-compose.yml exec php-fpm php artisan view:cache
             # Restart nginx (if necessary)
             sudo systemctl restart nginx
+          EOF
