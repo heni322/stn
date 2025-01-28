@@ -20,7 +20,7 @@ services:
     restart: always
     environment:
       MYSQL_DATABASE: stn
-      MYSQL_ROOT_PASSWORD: your_db_password
+      MYSQL_ROOT_PASSWORD: password
     volumes:
       - db_data:/var/lib/mysql
     networks:
