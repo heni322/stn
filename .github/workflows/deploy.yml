@@ -25,7 +25,7 @@ jobs:
             # Copy .env.local to .env (if you need to do that)
             sudo cp /var/www/.env.local /var/www/stn/.env
             # Config
-            sudo git config --global --add safe.directory /var/www/html
+            sudo git config --global --add safe.directory /var/www/stn
             # Pull the latest code from GitHub
             sudo git pull origin main
             # Set permissions for Laravel storage and cache
