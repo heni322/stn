@@ -13,6 +13,8 @@ services:
       - stn_network
     environment:
       - REDIS_HOST=redis
+      - DB_HOST=mysql
+
 
   db:
     image: mysql:8.0
@@ -25,6 +27,8 @@ services:
       - db_data:/var/lib/mysql
     networks:
       - stn_network
+    hostname: mysql
+
 
   redis:
     image: redis:alpine
