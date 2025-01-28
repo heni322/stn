@@ -1,35 +1,35 @@
-# Use the official PHP image with PHP 8.2 and FPM
-FROM php:8.2-fpm
+# Use PHP 8.2 with Apache
+FROM php:8.2-apache
 
-# Set the working directory in the container
+# Set working directory
 WORKDIR /var/www/html
 
-# Install necessary system dependencies and PHP extensions
+# Install dependencies
 RUN apt-get update && apt-get install -y \
+    git \
+    unzip \
+    libzip-dev \
+    libonig-dev \
+    libxml2-dev \
     libpng-dev \
     libjpeg-dev \
     libfreetype6-dev \
-    libxml2-dev \
-    zip \
-    git \
-    curl \
-    libicu-dev \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install gd pdo pdo_mysql intl \
-    && pecl install xdebug \
-    && docker-php-ext-enable xdebug
+    && docker-php-ext-install pdo_mysql mbstring zip exif pcntl bcmath gd
 
-# Install Composer globally
+# Install Composer
 RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 
-# Copy the Laravel project files into the container
-COPY . /var/www/html
+# Copy application files
+COPY . .
 
-# Set permissions for Laravel storage and cache directories
+# Install PHP dependencies
+RUN composer install --no-dev --optimize-autoloader
+
+# Set permissions
 RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
 
-# Expose PHP-FPM port
-EXPOSE 9000
+# Expose port 80
+EXPOSE 80
 
-# Run PHP-FPM
-CMD ["php-fpm"]
+# Start Apache
+CMD ["apache2-foreground"]
