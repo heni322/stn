@@ -1,4 +1,4 @@
-name: Deploy Laravel in Docker (stn)
+name: Deploy Laravel
 
 on:
   push:
@@ -13,32 +13,38 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up PHP 8.2
+      - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: "8.2"
           extensions: mbstring, bcmath, curl, xml
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
-          docker-compose run --rm composer install --no-dev --prefer-dist --optimize-autoloader
-          docker-compose run --rm php-fpm php artisan config:cache
-          docker-compose run --rm php-fpm php artisan route:cache
-          docker-compose run --rm php-fpm php artisan view:cache
+          composer install --no-dev --prefer-dist --optimize-autoloader
 
-      - name: Deploy to Server in Docker
+      - name: Deploy to Server
         uses: appleboy/ssh-action@v0.1.6
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            cd ${{ secrets.DEPLOY_PATH }}
+            # Navigate to the project directory
+            cd /var/www/stn
+            # Copy .env.local to .env
+            sudo cp /var/www/.env.local /var/www/stn/.env
+            # Pull latest code from GitHub
             git pull origin main
-            docker-compose pull  # Fetches the latest images but does not rebuild the app unless necessary
-            docker-compose up -d  # Starts the containers (if they are down) or restarts them if updated
-            docker exec stn_php-fpm_1 bash -c "php artisan migrate --force"
-            docker exec stn_php-fpm_1 bash -c "php artisan config:cache"
-            docker exec stn_php-fpm_1 bash -c "php artisan route:cache"
-            docker exec stn_php-fpm_1 bash -c "php artisan view:cache"
-            sudo systemctl restart apache2
+            # Set permissions for Laravel storage and cache
+            sudo chown -R www-data:www-data /var/www/stn
+            sudo chmod -R 775 /var/www/stn/storage /var/www/stn/bootstrap/cache
+            # Run Docker Compose commands to start containers and handle cache
+            sudo docker-compose -f /var/www/stn/docker-compose.yml up -d
+            sudo docker-compose -f /var/www/stn/docker-compose.yml exec php-fpm composer install --no-dev --prefer-dist --optimize-autoloader
+            sudo docker-compose -f /var/www/stn/docker-compose.yml exec php-fpm php artisan migrate --force
+            sudo docker-compose -f /var/www/stn/docker-compose.yml exec php-fpm php artisan config:cache
+            sudo docker-compose -f /var/www/stn/docker-compose.yml exec php-fpm php artisan route:cache
+            sudo docker-compose -f /var/www/stn/docker-compose.yml exec php-fpm php artisan view:cache
+            # Restart nginx (if necessary)
+            sudo systemctl restart nginx

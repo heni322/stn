@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  # Nginx service
+  nginx:
+    image: nginx:latest
+    container_name: stn_nginx
+    volumes:
+      - ./stn:/var/www/html
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+    ports:
+      - "80:80"
+    depends_on:
+      - php-fpm
+      - mysql
+    networks:
+      - app_network
+
+  # PHP-FPM service
+  php-fpm:
+    build:
+      context: .
+    container_name: stn_php-fpm
+    volumes:
+      - ./stn:/var/www/html
+    depends_on:
+      - mysql
+    networks:
+      - app_network
+
+  # Composer service (for managing dependencies)
+  composer:
+    image: composer:latest
+    container_name: stn_composer
+    volumes:
+      - ./stn:/var/www/html
+    networks:
+      - app_network
+
+  # MySQL service
+  mysql:
+    image: mysql:8.0
+    container_name: stn_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword  # Set a root password
+      MYSQL_DATABASE: stn_db             # Create a database named 'stn_db'
+      MYSQL_USER: stn_user               # Create a user 'stn_user'
+      MYSQL_PASSWORD: stn_password       # Set a password for 'stn_user'
+    volumes:
+      - mysql_data:/var/lib/mysql         # Persistent data volume for MySQL
+    ports:
+      - "3306:3306"                       # Expose MySQL on port 3306
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge
+
+volumes:
+  mysql_data:  # Persistent volume for MySQL data
