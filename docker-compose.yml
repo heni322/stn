@@ -11,7 +11,10 @@ services:
       - stn_network
     environment:
       - REDIS_HOST=redis
-      - DB_HOST=mysql
+      - DB_HOST=db
+    depends_on:
+      - db
+      - redis
 
   db:
     image: mysql:8.0
