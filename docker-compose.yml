@@ -5,8 +5,6 @@ services:
       dockerfile: Dockerfile
     container_name: stn_app
     restart: always
-    ports:
-      - "8000:80"
     volumes:
       - .:/var/www/html
     networks:
@@ -14,7 +12,6 @@ services:
     environment:
       - REDIS_HOST=redis
       - DB_HOST=mysql
-
 
   db:
     image: mysql:8.0
@@ -28,7 +25,6 @@ services:
     networks:
       - stn_network
     hostname: mysql
-
 
   redis:
     image: redis:alpine

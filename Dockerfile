@@ -1,5 +1,5 @@
-# Use PHP 8.2 with Apache
-FROM php:8.2-apache
+# Use PHP 8.2 with FPM
+FROM php:8.2-fpm
 
 # Set working directory
 WORKDIR /var/www/html
@@ -23,18 +23,6 @@ RUN apt-get update && apt-get install -y \
 # Install Redis extension for PHP
 RUN pecl install redis && docker-php-ext-enable redis
 
-# Enable Apache mods
-RUN a2enmod rewrite
-
-# Configure Apache to allow access to Laravel public folder
-RUN sed -i 's|DocumentRoot /var/www/html|DocumentRoot /var/www/html/public|' /etc/apache2/sites-available/000-default.conf
-
-# Copy custom Apache configuration
-COPY apache-config.conf /etc/apache2/sites-available/000-default.conf
-
-# Copy and update Apache main configuration
-COPY apache2.conf /etc/apache2/apache2.conf
-
 # Install Composer globally
 RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 
@@ -57,8 +45,8 @@ RUN touch /var/log/cron.log
 # Copy Supervisor configuration
 COPY ./supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-# Expose port 80 for Apache
-EXPOSE 80
+# Expose port 9000 for PHP-FPM
+EXPOSE 9000
 
-# Start Supervisor to manage Apache and cron
+# Start Supervisor to manage PHP-FPM and cron
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
