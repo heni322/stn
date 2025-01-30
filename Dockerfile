@@ -66,8 +66,7 @@ RUN docker-php-ext-install \
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 # Set user to avoid permissions issues between the host and container
-ARG uid=1000
-RUN useradd -G www-data,root -u ${uid} -d /home/devuser devuser \
+RUN useradd -G www-data,root -u 1000 -d /home/devuser devuser \
     && mkdir -p /home/devuser/.composer \
     && chown -R devuser:devuser /home/devuser
 # Set working directory to Laravel project
