@@ -7,11 +7,17 @@ services:
     restart: always
     volumes:
       - .:/var/www/html
+      - ./storage/logs:/var/www/html/storage/logs
+      - ./storage/app/public:/var/www/html/storage/app/public
     networks:
       - stn_network
     environment:
+      - APP_ENV=production
       - REDIS_HOST=redis
-      - DB_HOST=db
+      - DB_HOST=mysql
+      - DB_DATABASE=stn
+      - DB_USERNAME=root
+      - DB_PASSWORD=password
     depends_on:
       - db
       - redis
@@ -25,6 +31,7 @@ services:
       MYSQL_ROOT_PASSWORD: password
     volumes:
       - db_data:/var/lib/mysql
+      - ./my.cnf:/etc/mysql/conf.d/my.cnf
     networks:
       - stn_network
     hostname: mysql
@@ -33,13 +40,14 @@ services:
     image: redis:alpine
     container_name: stn_redis
     restart: always
-    ports:
-      - "6379:6379"
+    volumes:
+      - redis_data:/data
     networks:
       - stn_network
 
 volumes:
   db_data:
+  redis_data:
 
 networks:
   stn_network:

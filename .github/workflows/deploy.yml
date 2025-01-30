@@ -22,27 +22,46 @@ jobs:
           script: |
             # Navigate to the project directory
             cd /var/www/stn
-            # Copy .env.local to .env (if you need to do that)
-            sudo cp /var/www/.env.local /var/www/stn/.env
-            # Config
-            sudo git config --global --add safe.directory /var/www/html
+
+            # Config git
             sudo git config --global --add safe.directory /var/www/stn
+
             # Pull the latest code from GitHub
             sudo git pull origin main
-            # Set permissions for Laravel storage and cache
+
+            # Copy environment file if needed
+            if [ ! -f .env ]; then
+              sudo cp /var/www/.env.local .env
+            fi
+
+            # Set proper permissions
             sudo chown -R www-data:www-data /var/www/stn
-            sudo chmod -R 775 /var/www/stn/storage /var/www/stn/bootstrap/cache
-            # Run Docker Compose commands to start containers and handle cache
-            sudo docker-compose -f /var/www/stn/docker-compose.yml up -d --build
-            # In your deployment script, add these lines after the docker-compose up command:
-            sudo docker-compose -f /var/www/stn/docker-compose.yml exec app supervisorctl reread
-            sudo docker-compose -f /var/www/stn/docker-compose.yml exec app supervisorctl update
-            sudo docker-compose -f /var/www/stn/docker-compose.yml exec app supervisorctl start all
-            # Execute composer install, migrations, and cache commands
-            sudo docker-compose -f /var/www/stn/docker-compose.yml exec app composer install --no-dev --prefer-dist --optimize-autoloader
-            sudo docker-compose -f /var/www/stn/docker-compose.yml exec app php artisan migrate --force
-            sudo docker-compose -f /var/www/stn/docker-compose.yml exec app php artisan config:cache
-            sudo docker-compose -f /var/www/stn/docker-compose.yml exec app php artisan route:cache
-            sudo docker-compose -f /var/www/stn/docker-compose.yml exec app php artisan view:cache
-            # Restart Nginx on the server
-            sudo systemctl restart nginx
+            sudo chmod -R 775 storage bootstrap/cache
+
+            # Build and start Docker containers
+            sudo docker-compose down
+            sudo docker-compose build --no-cache
+            sudo docker-compose up -d
+
+            # Wait for containers to be ready
+            sleep 10
+
+            # Run Laravel commands inside the Docker container
+            sudo docker-compose exec -T app composer install --no-dev --optimize-autoloader
+            sudo docker-compose exec -T app php artisan migrate --force
+            sudo docker-compose exec -T app php artisan config:cache
+            sudo docker-compose exec -T app php artisan route:cache
+            sudo docker-compose exec -T app php artisan view:cache
+            sudo docker-compose exec -T app php artisan storage:link
+
+            # Restart supervisor workers
+            sudo docker-compose exec -T app supervisorctl reread
+            sudo docker-compose exec -T app supervisorctl update
+            sudo docker-compose exec -T app supervisorctl start all
+
+            # Ensure proper permissions after all operations
+            sudo chown -R www-data:www-data /var/www/stn
+            sudo chmod -R 775 storage bootstrap/cache
+
+            # Reload Nginx configuration
+            sudo systemctl reload nginx
