@@ -14,6 +14,8 @@ services:
     stn_app:
         build:
             context: '.'
+            args:
+                uid: ${UID}
         restart: always
         container_name: stn-api
         ports:
