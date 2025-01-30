@@ -1,56 +1,36 @@
 services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: stn_app
-    restart: always
-    volumes:
-      - .:/var/www/html
-      - ./storage/logs:/var/www/html/storage/logs
-      - ./storage/app/public:/var/www/html/storage/app/public
-    networks:
-      - stn_network
-    environment:
-      - APP_ENV=production
-      - REDIS_HOST=redis
-      - DB_HOST=mysql
-      - DB_DATABASE=stn
-      - DB_USERNAME=root
-      - DB_PASSWORD=password
-    depends_on:
-      - db
-      - redis
-    ports:
-      - "9000:9000"
-
-  db:
-    image: mysql:8.0
-    container_name: stn_db
-    restart: always
-    environment:
-      MYSQL_DATABASE: stn
-      MYSQL_ROOT_PASSWORD: password
-    volumes:
-      - db_data:/var/lib/mysql
-      - ./my.cnf:/etc/mysql/conf.d/my.cnf
-    networks:
-      - stn_network
-    hostname: mysql
-
-  redis:
-    image: redis:alpine
-    container_name: stn_redis
-    restart: always
-    volumes:
-      - redis_data:/data
-    networks:
-      - stn_network
-
-volumes:
-  db_data:
-  redis_data:
-
-networks:
-  stn_network:
-    driver: bridge
+    stn_db:
+        image: mysql
+        command: --init-file /data/application/init.sql
+        volumes:
+            - ./init-db.sql:/data/application/init.sql
+        restart: always
+        environment:
+            MYSQL_ROOT_PASSWORD: password
+            MYSQL_DATABASE: stn
+            MYSQL_PASSWORD: password
+        ports:
+            - 3368:3306
+    stn_app:
+        build:
+            context: '.'
+            args:
+                uid: ${UID}
+        restart: always
+        container_name: stn-api
+        ports:
+            - 8899:80
+        depends_on:
+            - stn_db
+        volumes:
+            - /var/www/stn:/var/www/html
+            - /var/www/stn/custom-php.ini:/usr/local/etc/php/conf.d/custom-php.ini
+        environment:
+            - APACHE_DOCUMENT_ROOT=/var/www/html/public
+            - APACHE_RUN_USER=#1000
+            - APACHE_RUN_GROUP=#1000
+    redis:
+        container_name: stn-redis
+        image: 'redis:latest'
+        ports:
+            - '6378:6379'
