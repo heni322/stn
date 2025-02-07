@@ -12,7 +12,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
+      - name: Debug - Display SSH Key
+        run: |
+          echo "SSH Key:"
+          echo "${{ secrets.SERVER_SSH_KEY }}"
       - name: Deploy to Server
         uses: appleboy/ssh-action@master
         with:
