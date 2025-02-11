@@ -15,7 +15,7 @@ services:
         build:
             context: '.'
             args:
-                uid: ${UID}
+                uid: "1000"  # Replace with actual UID
         restart: always
         container_name: stn-api
         ports:

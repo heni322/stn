@@ -47,11 +47,15 @@ jobs:
             sudo docker-compose up -d
 
             # Wait for containers to be ready
-            sleep 10
+            until sudo docker-compose exec -T stn_db mysqladmin ping -h"127.0.0.1" -uroot -ppassword --silent; do
+                echo "Waiting for database (stn_db) to be ready..."
+                sleep 2
+            done
 
             # Run Laravel commands inside the Docker container
             sudo docker-compose exec -T app composer install --no-dev --optimize-autoloader
             sudo docker-compose exec -T app php artisan migrate --force
+            sudo docker-compose exec -T app php artisan db:seed --force
             sudo docker-compose exec -T app php artisan config:cache
             sudo docker-compose exec -T app php artisan route:cache
             sudo docker-compose exec -T app php artisan view:cache
