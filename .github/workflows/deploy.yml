@@ -48,7 +48,7 @@ jobs:
 
             # Wait for containers to be ready
             until sudo docker-compose exec -T stn_db mysqladmin ping -h"127.0.0.1" -uroot -ppassword --silent; do
-                echo "Waiting for database (stn_db) to be ready..."
+                echo "Waiting for database (stn_db) to be ready"
                 sleep 2
             done
 
