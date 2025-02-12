@@ -14,8 +14,9 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Spatie\Permission\Models\Role;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
-class UsersController extends Controller
+class UserController extends Controller
 {
     public function __construct()
     {
@@ -49,8 +50,15 @@ class UsersController extends Controller
                 ->when($filterRole, fn($q) => $q->whereHas('roles', fn($q) => $q->where('name', $filterRole)))
                 ->orderBy($sortBy, $sortOrder);
 
-            // Cache key for optimization
+            // Generate cache key
             $cacheKey = "users_{$filterFirstName}_{$filterLastName}_{$filterEmail}_{$filterRole}_{$sortBy}_{$sortOrder}_{$perPage}_page_{$page}";
+
+            // Store cache key for later clearing
+            $cacheKeys = Cache::get('user_cache_keys', []);
+            if (!in_array($cacheKey, $cacheKeys)) {
+                $cacheKeys[] = $cacheKey;
+                Cache::put('user_cache_keys', $cacheKeys, 3600);
+            }
 
             if ($paginate) {
                 $users = Cache::remember($cacheKey, 3600, function () use ($query, $perPage, $page) {
@@ -89,10 +97,10 @@ class UsersController extends Controller
 
     public function store(Request $request)
     {
-        // Start transaction
         DB::beginTransaction();
         try {
-            $request->validate([
+            // Using validate method with custom error handling
+            $validator = Validator::make($request->all(), [
                 'first_name' => 'required|string|max:255',
                 'last_name' => 'required|string|max:255',
                 'email' => 'required|string|email|max:255|unique:users',
@@ -100,6 +108,13 @@ class UsersController extends Controller
                 'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
                 'role' => 'required|string|exists:roles,name',
             ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'message' => 'The given data was invalid.',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
 
             // Handle image upload
             $imagePath = null;
@@ -117,19 +132,28 @@ class UsersController extends Controller
             ]);
 
             // Assign role to the user
-            $role = Role::where('name', $request->role)->where('guard_name', 'api')->first();
+            $role = Role::where('name', $request->role)
+                    ->where('guard_name', 'api')
+                    ->first();
+
             if ($role) {
                 $user->assignRole($role);
             }
 
-            // Commit transaction
             DB::commit();
+            $this->clearUserCache();
 
             return response()->json(new UserResource($user), 201);
-        } catch (\Exception $e) {
-            // Rollback transaction on error
-            DB::rollBack();
 
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'The given data was invalid.',
+                'errors' => $e->errors()
+            ], 422);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
             Log::error('Error creating user: ' . $e->getMessage());
 
             return response()->json([
@@ -137,6 +161,16 @@ class UsersController extends Controller
                 'message' => 'An error occurred while creating the user.',
             ], 500);
         }
+    }
+
+    // Helper method to clear cache
+    private function clearUserCache()
+    {
+        $cacheKeys = Cache::get('user_cache_keys', []);
+        foreach ($cacheKeys as $key) {
+            Cache::forget($key);
+        }
+        Cache::forget('user_cache_keys');
     }
 
     public function show(User $user)
@@ -149,7 +183,7 @@ class UsersController extends Controller
         // Start transaction
         DB::beginTransaction();
         try {
-            $request->validate([
+            $validator = Validator::make($request->all(), [
                 'first_name' => 'sometimes|string|max:255',
                 'last_name' => 'sometimes|string|max:255',
                 'email' => [
@@ -163,6 +197,13 @@ class UsersController extends Controller
                 'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
                 'role' => 'sometimes|string|exists:roles,name',
             ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'message' => 'The given data was invalid.',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
 
             // Handle image upload
             if ($request->hasFile('image')) {
@@ -188,8 +229,10 @@ class UsersController extends Controller
 
             // Commit transaction
             DB::commit();
+            $this->clearUserCache();
 
             return response()->json(new UserResource($user));
+
         } catch (\Exception $e) {
             // Rollback transaction on error
             DB::rollBack();
@@ -208,6 +251,7 @@ class UsersController extends Controller
         try {
             // Delete the user
             $user->delete();
+            $this->clearUserCache();
 
             return response()->json([
                 'success' => true,
@@ -219,6 +263,40 @@ class UsersController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'An error occurred while deleting the user.',
+            ], 500);
+        }
+    }
+
+    public function destroySelected(Request $request)
+    {
+        try {
+            // Get the selected user IDs from the request
+            $userIds = $request->input('user_ids', []);
+
+            // Check if any IDs were provided
+            if (empty($userIds)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No user IDs provided.',
+                ], 400);
+            }
+
+            // Delete the users with the provided IDs
+            User::whereIn('id', $userIds)->delete();
+
+            // Clear user cache (if applicable)
+            $this->clearUserCache();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Selected users deleted successfully.',
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error deleting selected users: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'An error occurred while deleting the selected users.',
             ], 500);
         }
     }
