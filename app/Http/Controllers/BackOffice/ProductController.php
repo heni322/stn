@@ -5,6 +5,8 @@ namespace App\Http\Controllers\BackOffice;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ProductResource;
 use App\Models\Product;
+use App\Models\ProductImage;
+use App\Models\ProductVariant;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -16,33 +18,25 @@ class ProductController extends Controller
 {
     public function __construct()
     {
-        // Apply middleware to all routes except for 'index' or 'show' if needed
         $this->middleware(['auth:api', 'role:Admin'])->except(['index', 'show']);
     }
 
     public function index(Request $request)
     {
         try {
-            // Filters
             $filterName = $request->input('name');
             $filterCategory = $request->input('category_id');
-
-            // Sorting
             $sortBy = $request->input('sort_by', 'created_at');
             $sortOrder = Str::upper($request->input('sort_order', 'desc'));
-
-            // Pagination
             $paginate = filter_var($request->input('paginate'), FILTER_VALIDATE_BOOLEAN);
-            $perPage = $request->input('per_page', 10);
+            $perPage = min($request->input('per_page', 10), 100); // Limit per_page to 100
             $page = (int) $request->input('page', 1);
 
-            // Build query
             $query = Product::query()
                 ->when($filterName, fn($q) => $q->where('name', 'LIKE', "%{$filterName}%"))
                 ->when($filterCategory, fn($q) => $q->where('category_id', $filterCategory))
                 ->orderBy($sortBy, $sortOrder);
 
-            // Cache key for optimization
             $cacheKey = "products_{$filterName}_{$filterCategory}_{$sortBy}_{$sortOrder}_{$perPage}_page_{$page}";
 
             if ($paginate) {
@@ -72,7 +66,6 @@ class ProductController extends Controller
             }
         } catch (\Exception $e) {
             Log::error('Error fetching products: ' . $e->getMessage());
-
             return response()->json([
                 'success' => false,
                 'message' => 'An error occurred while fetching products.',
@@ -82,7 +75,6 @@ class ProductController extends Controller
 
     public function store(Request $request)
     {
-        // Start transaction
         DB::beginTransaction();
         try {
             $request->validate([
@@ -92,29 +84,45 @@ class ProductController extends Controller
                 'site_id' => 'required|exists:sites,id',
                 'category_id' => 'required|exists:categories,id',
                 'images' => 'nullable|array',
-                'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048', // Validate each image
+                'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048',
+                'variants' => 'nullable|array',
+                'variants.*.size' => 'required|string',
+                'variants.*.color' => 'required|string',
+                'variants.*.price' => 'required|numeric',
+                'variants.*.stock' => 'required|integer',
             ]);
 
-            $product = Product::create($request->all());
+            $product = Product::create($request->only(['name', 'description', 'price', 'site_id', 'category_id']));
 
-            $images = handleImageUpload($request, 'images', 'product_images', true);
-
-            foreach ($images as $imageData) {
-                $product->images()->create([
-                    'image_path' => $imageData['path'],
-                    'is_primary' => $imageData['is_primary'],
-                ]);
+            // Handle images
+            if ($request->hasFile('images')) {
+                $images = $this->handleImageUpload($request, 'images', 'product_images', true);
+                foreach ($images as $imageData) {
+                    $product->images()->create([
+                        'image_path' => $imageData['path'],
+                        'is_primary' => $imageData['is_primary'],
+                    ]);
+                }
             }
 
-            // Commit transaction
-            DB::commit();
+            // Handle variants
+            if ($request->has('variants')) {
+                foreach ($request->variants as $variantData) {
+                    $product->variants()->create([
+                        'size' => $variantData['size'],
+                        'color' => $variantData['color'],
+                        'price' => $variantData['price'],
+                        'stock' => $variantData['stock'],
+                    ]);
+                }
+            }
 
+            DB::commit();
+            Cache::forget('products_*'); // Invalidate cache
             return response()->json(new ProductResource($product), 201);
         } catch (\Exception $e) {
-            // Rollback transaction on error
             DB::rollBack();
-
-            // Handle the exception (e.g., log it, rethrow, etc.)
+            Log::error('Error storing product: ' . $e->getMessage());
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
@@ -127,7 +135,6 @@ class ProductController extends Controller
     public function update(Request $request, Product $product)
     {
         DB::beginTransaction();
-
         try {
             $request->validate([
                 'name' => 'required|string|max:255',
@@ -136,22 +143,26 @@ class ProductController extends Controller
                 'site_id' => 'required|exists:sites,id',
                 'category_id' => 'required|exists:categories,id',
                 'images' => 'nullable|array',
-                'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048', // Validate each image
+                'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048',
+                'variants' => 'nullable|array',
+                'variants.*.id' => 'nullable|exists:product_variants,id', // For updating existing variants
+                'variants.*.size' => 'required|string',
+                'variants.*.color' => 'required|string',
+                'variants.*.price' => 'required|numeric',
+                'variants.*.stock' => 'required|integer',
             ]);
 
             // Update product details
             $product->update($request->only(['name', 'description', 'price', 'site_id', 'category_id']));
 
-            // Check if new images are provided
+            // Handle images
             if ($request->hasFile('images')) {
-                // Delete old images from storage
                 foreach ($product->images as $oldImage) {
                     Storage::delete($oldImage->image_path);
                     $oldImage->delete();
                 }
 
-                $images = handleImageUpload($request, 'images', 'product_images', true);
-
+                $images = $this->handleImageUpload($request, 'images', 'product_images', true);
                 foreach ($images as $imageData) {
                     $product->images()->create([
                         'image_path' => $imageData['path'],
@@ -160,27 +171,75 @@ class ProductController extends Controller
                 }
             }
 
+            // Handle variants
+            if ($request->has('variants')) {
+                foreach ($request->variants as $variantData) {
+                    if (isset($variantData['id'])) {
+                        // Update existing variant
+                        $variant = ProductVariant::find($variantData['id']);
+                        $variant->update([
+                            'size' => $variantData['size'],
+                            'color' => $variantData['color'],
+                            'price' => $variantData['price'],
+                            'stock' => $variantData['stock'],
+                        ]);
+                    } else {
+                        // Create new variant
+                        $product->variants()->create([
+                            'size' => $variantData['size'],
+                            'color' => $variantData['color'],
+                            'price' => $variantData['price'],
+                            'stock' => $variantData['stock'],
+                        ]);
+                    }
+                }
+            }
+
             DB::commit();
+            Cache::forget('products_*'); // Invalidate cache
             return response()->json(new ProductResource($product));
         } catch (\Exception $e) {
             DB::rollBack();
+            Log::error('Error updating product: ' . $e->getMessage());
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
 
-
     public function destroy(Product $product)
     {
-        // Delete associated images from storage
-        foreach ($product->images as $image) {
-            Storage::delete($image->image_path);
-            $image->delete(); // Delete image record from the database
+        try {
+            // Delete associated images
+            foreach ($product->images as $image) {
+                Storage::delete($image->image_path);
+                $image->delete();
+            }
+
+            // Delete associated variants
+            $product->variants()->delete();
+
+            // Delete the product
+            $product->delete();
+
+            Cache::forget('products_*'); // Invalidate cache
+            return response()->json(['message' => 'Product and associated images/variants deleted successfully']);
+        } catch (\Exception $e) {
+            Log::error('Error deleting product: ' . $e->getMessage());
+            return response()->json(['error' => $e->getMessage()], 500);
         }
-
-        // Now delete the product
-        $product->delete();
-
-        return response()->json(['message' => 'Product and associated images deleted successfully']);
     }
 
+    private function handleImageUpload(Request $request, $fieldName, $storagePath, $isPrimary = false)
+    {
+        $images = [];
+        if ($request->hasFile($fieldName)) {
+            foreach ($request->file($fieldName) as $image) {
+                $path = $image->store($storagePath, 'public');
+                $images[] = [
+                    'path' => $path,
+                    'is_primary' => $isPrimary,
+                ];
+            }
+        }
+        return $images;
+    }
 }
