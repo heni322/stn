@@ -38,7 +38,11 @@ class ProductController extends Controller
                 ->orderBy($sortBy, $sortOrder);
 
             $cacheKey = "products_{$filterName}_{$filterCategory}_{$sortBy}_{$sortOrder}_{$perPage}_page_{$page}";
-
+            $cacheKeys = Cache::get('product_cache_keys', []);
+            if (!in_array($cacheKey, $cacheKeys)) {
+                $cacheKeys[] = $cacheKey;
+                Cache::put('product_cache_keys', $cacheKeys, 3600);
+            }
             if ($paginate) {
                 $products = Cache::remember($cacheKey, 3600, function () use ($query, $perPage, $page) {
                     return $query->paginate($perPage, ['*'], 'page', $page);
@@ -96,7 +100,7 @@ class ProductController extends Controller
 
             // Handle images
             if ($request->hasFile('images')) {
-                $images = $this->handleImageUpload($request, 'images', 'product_images', true);
+                $images = handleImageUpload($request, 'images', 'product_images', true);
                 foreach ($images as $imageData) {
                     $product->images()->create([
                         'image_path' => $imageData['path'],
@@ -118,7 +122,7 @@ class ProductController extends Controller
             }
 
             DB::commit();
-            Cache::forget('products_*'); // Invalidate cache
+            $this->clearProductCache();
             return response()->json(new ProductResource($product), 201);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -162,7 +166,7 @@ class ProductController extends Controller
                     $oldImage->delete();
                 }
 
-                $images = $this->handleImageUpload($request, 'images', 'product_images', true);
+                $images = handleImageUpload($request, 'images', 'product_images', true);
                 foreach ($images as $imageData) {
                     $product->images()->create([
                         'image_path' => $imageData['path'],
@@ -196,7 +200,7 @@ class ProductController extends Controller
             }
 
             DB::commit();
-            Cache::forget('products_*'); // Invalidate cache
+            $this->clearProductCache();
             return response()->json(new ProductResource($product));
         } catch (\Exception $e) {
             DB::rollBack();
@@ -219,7 +223,7 @@ class ProductController extends Controller
 
             // Delete the product
             $product->delete();
-
+            $this->clearProductCache();
             Cache::forget('products_*'); // Invalidate cache
             return response()->json(['message' => 'Product and associated images/variants deleted successfully']);
         } catch (\Exception $e) {
@@ -228,18 +232,13 @@ class ProductController extends Controller
         }
     }
 
-    private function handleImageUpload(Request $request, $fieldName, $storagePath, $isPrimary = false)
+    private function clearProductCache()
     {
-        $images = [];
-        if ($request->hasFile($fieldName)) {
-            foreach ($request->file($fieldName) as $image) {
-                $path = $image->store($storagePath, 'public');
-                $images[] = [
-                    'path' => $path,
-                    'is_primary' => $isPrimary,
-                ];
-            }
+        $cacheKeys = Cache::get('product_cache_keys', []);
+        foreach ($cacheKeys as $key) {
+            Cache::forget($key);
         }
-        return $images;
+        Cache::forget('product_cache_keys');
     }
+
 }
